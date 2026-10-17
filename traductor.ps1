@@ -1,21 +1,23 @@
-
 param(
-    [string]$Root = $PSScriptRoot
+    [string]$Root = $PSScriptRoot,
+    [switch]$NoWatch
 )
 
 $ErrorActionPreference = "Continue"
-$Root = [IO.Path]::GetFullPath($Root)
+if ($Root) {
+    $Root = [IO.Path]::GetFullPath($Root)
+}
 
 function Get-OutputName([string]$File) {
     $relative = [IO.Path]::GetRelativePath($Root, $File)
     $dir = Split-Path $relative -Parent
     $base = [IO.Path]::GetFileNameWithoutExtension($relative)
 
-    $parts = @()
+    $parts = [System.Collections.Generic.List[string]]::new()
     if ($dir -and $dir -ne ".") {
-        $parts += ($dir -split '[\\/]')
+        $parts.AddRange(($dir -split '[\\/]'))
     }
-    $parts += $base
+    $parts.Add($base)
 
     $name = ($parts -join "_") -replace '[^a-zA-Z0-9_-]', "_"
     return $name
@@ -26,52 +28,51 @@ function Escape-Html([string]$s) {
 }
 
 function Translate-Cha([string]$File, [string]$Name) {
-    $lines = Get-Content -LiteralPath $File
-    $body = New-Object System.Collections.Generic.List[string]
+    $lines = [System.IO.File]::ReadAllLines($File)
+    $body = [System.Text.StringBuilder]::new()
     $title = $Name
 
-    foreach ($line in $lines) {
-        $s = $line.Trim()
-        if (!$s -or $s.StartsWith("#")) { continue }
-
-        if ($s -match '^TITULO\s+"(.*)"$') {
+    switch -Regex ($lines) {
+        '^\s*$' { continue }
+        '^\s*#' { continue }
+        '^\s*TITULO\s+"(.*)"$' {
             $title = $Matches[1]
+            continue
         }
-        elseif ($s -match '^ENCABEZADO\s+([1-6])\s*\|\s*"(.*)"$') {
-            $n = $Matches[1]
-            $body.Add("<h$n>$($Matches[2])</h$n>")
+        '^\s*ENCABEZADO\s+([1-6])\s*\|\s*"(.*)"$' {
+            [void]$body.AppendLine("<h$($Matches[1])>$($Matches[2])</h$($Matches[1])>")
+            continue
         }
-        elseif ($s -match '^TEXTO_ID\s+(\w+)\s*\|\s*"(.*)"$') {
-            $id = $Matches[1]
-            $value = $Matches[2]
-            $body.Add("<p id=`"$id`">$value</p>")
+        '^\s*TEXTO_ID\s+(\w+)\s*\|\s*"(.*)"$' {
+            [void]$body.AppendLine("<p id=`"$($Matches[1])`">$($Matches[2])</p>")
+            continue
         }
-        elseif ($s -match '^TEXTO\s+"(.*)"$') {
-            $body.Add("<p>$($Matches[1])</p>")
+        '^\s*TEXTO\s+"(.*)"$' {
+            [void]$body.AppendLine("<p>$($Matches[1])</p>")
+            continue
         }
-        elseif ($s -match '^ENTRADA\s+(\w+)\s*\|\s*"(.*)"$') {
-            $id = $Matches[1]
-            $value = $Matches[2]
-            $body.Add("<input id=`"$id`" value=`"$value`" />")
+        '^\s*ENTRADA\s+(\w+)\s*\|\s*"(.*)"$' {
+            [void]$body.AppendLine("<input id=`"$($Matches[1])`" value=`"$($Matches[2])`" />")
+            continue
         }
-        elseif ($s -match '^BOTON\s+(\w+)\s*\|\s*"(.*)"$') {
-            $id = $Matches[1]
-            $label = $Matches[2]
-            $body.Add("<button id=`"$id`" type=`"button`">$label</button>")
+        '^\s*BOTON\s+(\w+)\s*\|\s*"(.*)"$' {
+            [void]$body.AppendLine("<button id=`"$($Matches[1])`" type=`"button`">$($Matches[2])</button>")
+            continue
         }
-        elseif ($s -match '^IMAGEN\s+(\S+)$') {
-            $body.Add("<img src=`"$($Matches[1])`" alt=`"Imagen`" />")
+        '^\s*IMAGEN\s+(\S+)$' {
+            [void]$body.AppendLine("<img src=`"$($Matches[1])`" alt=`"Imagen`" />")
+            continue
         }
-        elseif ($s -match '^ENLACE\s+"(.*)"\s*\|\s*"(.*)"$') {
-            $url = $Matches[1]
-            $label = $Matches[2]
-            $body.Add("<a href=`"$url`">$label</a>")
+        '^\s*ENLACE\s+"?([^"\s|]+)"?\s*\|\s*"(.*)"$' {
+            [void]$body.AppendLine("<a href=`"$($Matches[1])`">$($Matches[2])</a>")
+            continue
         }
-        elseif ($s -match '^LINEA$') {
-            $body.Add("<hr />")
+        '^\s*LINEA$' {
+            [void]$body.AppendLine("<hr />")
+            continue
         }
-        else {
-            Write-Host "Aviso .cha: comando no reconocido: $s" -ForegroundColor Yellow
+        default {
+            Write-Host "Aviso .cha: comando no reconocido: $_" -ForegroundColor Yellow
         }
     }
 
@@ -88,7 +89,7 @@ function Translate-Cha([string]$File, [string]$Name) {
 <link rel="stylesheet" href="$cssName">
 </head>
 <body>
-$($body -join "`r`n")
+$($body.ToString().TrimEnd())
 <script src="$jsName"></script>
 </body>
 </html>
@@ -98,40 +99,44 @@ $($body -join "`r`n")
 }
 
 function Translate-Chb([string]$File) {
-    $lines = Get-Content -LiteralPath $File
-    $js = New-Object System.Collections.Generic.List[string]
+    $lines = [System.IO.File]::ReadAllLines($File)
+    $js = [System.Text.StringBuilder]::new()
 
-    $js.Add("'use strict';")
-    $js.Add("document.addEventListener('DOMContentLoaded', function () {")
+    [void]$js.AppendLine("'use strict';")
+    [void]$js.AppendLine("document.addEventListener('DOMContentLoaded', function () {")
 
-    foreach ($line in $lines) {
-        $s = $line.Trim()
-        if (!$s -or $s.StartsWith("#")) { continue }
-
-        if ($s -match '^AVISAR\s+"(.*)"$') {
+    switch -Regex ($lines) {
+        '^\s*$' { continue }
+        '^\s*#' { continue }
+        '^\s*AVISAR\s+"(.*)"$' {
             $msg = $Matches[1].Replace("\", "\\").Replace("'", "\'")
-            $js.Add("alert('$msg');")
+            [void]$js.AppendLine("alert('$msg');")
+            continue
         }
-        elseif ($s -match '^CONSOLA\s+"(.*)"$') {
+        '^\s*CONSOLA\s+"(.*)"$' {
             $msg = $Matches[1].Replace("\", "\\").Replace("'", "\'")
-            $js.Add("console.log('$msg');")
+            [void]$js.AppendLine("console.log('$msg');")
+            continue
         }
-        elseif ($s -match '^ESPERAR\s+(\d+)$') {
+        '^\s*ESPERAR\s+(\d+)$' {
             $ms = [int]$Matches[1]
-            $js.Add("setTimeout(function () { console.log('CHX: espera terminada'); }, $ms);")
+            [void]$js.AppendLine("setTimeout(function () { console.log('CHX: espera terminada'); }, $ms);")
+            continue
         }
-        elseif ($s -match '^AL_CLIC\s+(\w+)\s*\|\s*"([^"]*)"$') {
+        '^\s*AL_CLIC\s+(\w+)\s*\|\s*"([^"]*)"$' {
             $id = $Matches[1]
             $msg = $Matches[2].Replace("\", "\\").Replace("'", "\'")
-            $js.Add("document.getElementById('$id')?.addEventListener('click', function () { alert('$msg'); });")
+            [void]$js.AppendLine("document.getElementById('$id')?.addEventListener('click', function () { alert('$msg'); });")
+            continue
         }
-        elseif ($s -match '^CALCULADORA\s+(\w+)\s*\|\s*(\w+)\s*\|\s*(\w+)$') {
+        '^\s*CALCULADORA\s+(\w+)\s*\|\s*(\w+)\s*\|\s*(\w+)$' {
             $a = $Matches[1]; $b = $Matches[2]; $r = $Matches[3]
-            $js.Add("const chxA = document.getElementById('$a');")
-            $js.Add("const chxB = document.getElementById('$b');")
-            $js.Add("const chxR = document.getElementById('$r');")
+            [void]$js.AppendLine("const chxA = document.getElementById('$a');")
+            [void]$js.AppendLine("const chxB = document.getElementById('$b');")
+            [void]$js.AppendLine("const chxR = document.getElementById('$r');")
+            continue
         }
-        elseif ($s -match '^OPERACION\s+(\w+)\s*\|\s*([+\-*/])$') {
+        '^\s*OPERACION\s+(\w+)\s*\|\s*([+\-*/])$' {
             $id = $Matches[1]
             $op = $Matches[2]
             $expr = switch ($op) {
@@ -140,7 +145,7 @@ function Translate-Chb([string]$File) {
                 "*" { "a * b" }
                 "/" { "a / b" }
             }
-            $js.Add(@"
+            [void]$js.AppendLine(@"
 document.getElementById('$id')?.addEventListener('click', function () {
     const a = Number(chxA?.value);
     const b = Number(chxB?.value);
@@ -155,66 +160,73 @@ document.getElementById('$id')?.addEventListener('click', function () {
     chxR.textContent = $expr;
 });
 "@)
+            continue
         }
-        elseif ($s -match '^LIMPIAR\s+(\w+)\s*\|\s*(.+)$') {
+        '^\s*LIMPIAR\s+(\w+)\s*\|\s*(.+)$' {
             $button = $Matches[1]
             $ids = $Matches[2] -split ','
-            $safeIds = @()
-            foreach ($id in $ids) {
-                $safeIds += "'" + $id.Trim() + "'"
+            $safeIds = foreach ($id in $ids) {
+                "'" + $id.Trim() + "'"
             }
             $list = $safeIds -join ","
-            $js.Add("document.getElementById('$button')?.addEventListener('click', function () {")
-            $js.Add("[$list].forEach(function(id) { const el = document.getElementById(id); if (el) { if ('value' in el) el.value = ''; else el.textContent = '0'; } });")
-            $js.Add("});")
+            [void]$js.AppendLine("document.getElementById('$button')?.addEventListener('click', function () {")
+            [void]$js.AppendLine("[$list].forEach(function(id) { const el = document.getElementById(id); if (el) { if ('value' in el) el.value = ''; else el.textContent = '0'; } });")
+            [void]$js.AppendLine("});")
+            continue
         }
-        else {
-            Write-Host "Aviso .chb: comando no reconocido: $s" -ForegroundColor Yellow
+        default {
+            Write-Host "Aviso .chb: comando no reconocido: $_" -ForegroundColor Yellow
         }
     }
 
-    $js.Add("});")
-    return ($js -join "`r`n")
+    [void]$js.AppendLine("});")
+    return $js.ToString()
 }
 
 function Translate-Chc([string]$File) {
-    $lines = Get-Content -LiteralPath $File
-    $css = New-Object System.Collections.Generic.List[string]
-    $css.Add("body { font-family: Arial, sans-serif; padding: 20px; }")
+    $lines = [System.IO.File]::ReadAllLines($File)
+    $css = [System.Text.StringBuilder]::new()
+    [void]$css.AppendLine("body { font-family: Arial, sans-serif; padding: 20px; }")
 
-    foreach ($line in $lines) {
-        $s = $line.Trim()
-        if (!$s -or $s.StartsWith("#")) { continue }
-
-        if ($s -match '^FONDO\s+"?([^"]+)"?$') {
-            $css.Add("body { background: $($Matches[1]); }")
+    switch -Regex ($lines) {
+        '^\s*$' { continue }
+        '^\s*#' { continue }
+        '^\s*FONDO\s+"?([^"]+)"?$' {
+            [void]$css.AppendLine("body { background: $($Matches[1]); }")
+            continue
         }
-        elseif ($s -match '^COLOR\s+"?([^"]+)"?$') {
-            $css.Add("body { color: $($Matches[1]); }")
+        '^\s*COLOR\s+"?([^"]+)"?$' {
+            [void]$css.AppendLine("body { color: $($Matches[1]); }")
+            continue
         }
-        elseif ($s -match '^TIPO_LETRA\s+"(.*)"$') {
-            $css.Add("body { font-family: '$($Matches[1])', sans-serif; }")
+        '^\s*TIPO_LETRA\s+"?(.*?)"?$' {
+            [void]$css.AppendLine("body { font-family: '$($Matches[1])', sans-serif; }")
+            continue
         }
-        elseif ($s -match '^TAMANO_TEXTO\s+(\d+)$') {
-            $css.Add("body { font-size: $($Matches[1])px; }")
+        '^\s*TAMANO_TEXTO\s+(\d+)$' {
+            [void]$css.AppendLine("body { font-size: $($Matches[1])px; }")
+            continue
         }
-        elseif ($s -match '^BOTONES_FONDO\s+"?([^"]+)"?$') {
-            $css.Add("button { background: $($Matches[1]); }")
+        '^\s*BOTONES_FONDO\s+"?([^"]+)"?$' {
+            [void]$css.AppendLine("button { background: $($Matches[1]); }")
+            continue
         }
-        elseif ($s -match '^BOTONES_COLOR\s+"?([^"]+)"?$') {
-            $css.Add("button { color: $($Matches[1]); }")
+        '^\s*BOTONES_COLOR\s+"?([^"]+)"?$' {
+            [void]$css.AppendLine("button { color: $($Matches[1]); }")
+            continue
         }
-        elseif ($s -match '^MARGEN\s+(\d+)$') {
-            $css.Add("body { margin: $($Matches[1])px; }")
+        '^\s*MARGEN\s+(\d+)$' {
+            [void]$css.AppendLine("body { margin: $($Matches[1])px; }")
+            continue
         }
-        else {
-            Write-Host "Aviso .chc: comando no reconocido: $s" -ForegroundColor Yellow
+        default {
+            Write-Host "Aviso .chc: comando no reconocido: $_" -ForegroundColor Yellow
         }
     }
 
-    $css.Add("button { padding: 8px 14px; margin: 4px; cursor: pointer; }")
-    $css.Add("input { padding: 8px; margin: 4px; max-width: 100%; }")
-    return ($css -join "`r`n")
+    [void]$css.AppendLine("button { padding: 8px 14px; margin: 4px; cursor: pointer; }")
+    [void]$css.AppendLine("input { padding: 8px; margin: 4px; max-width: 100%; }")
+    return $css.ToString()
 }
 
 function Translate-File([string]$File) {
@@ -250,7 +262,9 @@ Write-Host "===================================" -ForegroundColor Cyan
 Write-Host "Carpeta principal: $Root"
 Write-Host "Busca .cha, .chb y .chc en las subcarpetas."
 Write-Host "Los resultados se guardan aquí, junto al traductor."
-Write-Host "Deja esta ventana abierta. Pulsa Ctrl+C para detener."
+if (-not $NoWatch) {
+    Write-Host "Deja esta ventana abierta. Pulsa Ctrl+C para detener."
+}
 Write-Host ""
 
 # Traducir todos los archivos existentes al iniciar.
@@ -260,6 +274,10 @@ Get-ChildItem -LiteralPath $Root -Recurse -File |
     } |
     ForEach-Object { Translate-File $_.FullName }
 
+if ($NoWatch) {
+    return
+}
+
 # Vigilar las subcarpetas en busca de cambios.
 $watcher = New-Object System.IO.FileSystemWatcher
 $watcher.Path = $Root
@@ -268,12 +286,23 @@ $watcher.IncludeSubdirectories = $true
 $watcher.NotifyFilter = [IO.NotifyFilters]'FileName, LastWrite, Size'
 $watcher.EnableRaisingEvents = $true
 
+$lastEvents = [System.Collections.Concurrent.ConcurrentDictionary[string, datetime]]::new()
+
 $action = {
     $path = $Event.SourceEventArgs.FullPath
-    $change = $Event.SourceEventArgs.ChangeType
 
-    if (@(".cha", ".chb", ".chc") -contains [IO.Path]::GetExtension($path).ToLowerInvariant()) {
-        Start-Sleep -Milliseconds 300
+    $ext = [IO.Path]::GetExtension($path).ToLowerInvariant()
+    if (@(".cha", ".chb", ".chc") -contains $ext) {
+        $now = [datetime]::Now
+        $lastTime = [datetime]::MinValue
+        if ($lastEvents.TryGetValue($path, [ref]$lastTime)) {
+            if (($now - $lastTime).TotalMilliseconds -lt 200) {
+                return
+            }
+        }
+        $lastEvents[$path] = $now
+
+        Start-Sleep -Milliseconds 100
         if (Test-Path -LiteralPath $path -PathType Leaf) {
             Translate-File $path
         }
@@ -285,5 +314,5 @@ Register-ObjectEvent $watcher Created -Action $action | Out-Null
 Register-ObjectEvent $watcher Renamed -Action $action | Out-Null
 
 while ($true) {
-    Wait-Event -Timeout 1 | Out-Null
+    Start-Sleep -Milliseconds 500
 }
