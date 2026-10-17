@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editor de Código RC - CHX</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; background: #1e1e1e; color: #d4d4d4; }
+    header { background: #2d2d2d; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #3c3c3c; }
+    header h1 { font-size: 1.1rem; color: #007acc; }
+    .toolbar { display: flex; gap: 10px; }
+    button { background: #0e639c; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    button:hover { background: #1177bb; }
+    .main-container { flex: 1; display: flex; overflow: hidden; }
+    .editor-section, .preview-section { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #3c3c3c; }
+    .preview-section { border-right: none; background: white; }
+    .section-header { background: #252526; padding: 6px 15px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #aaa; border-bottom: 1px solid #3c3c3c; }
+    .preview-section .section-header { background: #f3f3f3; color: #555; border-bottom: 1px solid #ddd; }
+    textarea { flex: 1; background: #1e1e1e; color: #d4d4d4; border: none; padding: 15px; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; line-height: 1.5; resize: none; outline: none; }
+    iframe { flex: 1; border: none; background: white; }
+</style>
+</head>
+<body>
+<header>
+    <h1>CHX Code Editor (.rc -> .html)</h1>
+    <div class="toolbar">
+        <button onclick="downloadRc()">Guardar .rc</button>
+        <button onclick="downloadHtml()">Exportar .html</button>
+    </div>
+</header>
+<div class="main-container">
+    <div class="editor-section">
+        <div class="section-header">Código Source (.rc)</div>
+        <textarea id="code" placeholder="Escribe código .rc aquí...">TITULO "Mi Página RC"
+ENCABEZADO 1 | "Bienvenido al Editor RC"
+TEXTO "Este es un código escrito en formato .rc traducido en tiempo real a HTML."
+ENTRADA usuario | "Nombre de usuario"
+BOTON btn1 | "Guardar Datos"
+LINEA</textarea>
+    </div>
+    <div class="preview-section">
+        <div class="section-header">Vista Previa Live (HTML)</div>
+        <iframe id="preview"></iframe>
+    </div>
+</div>
+
+<script>
+function translateRcToHtml(code) {
+    const lines = code.split('\n');
+    let title = 'Documento RC';
+    let bodyHtml = '';
+
+    lines.forEach(line => {
+        let s = line.trim();
+        if (!s || s.startsWith('#')) return;
+
+        let m;
+        if (m = s.match(/^TITULO\s+"(.*)"$/)) {
+            title = m[1];
+        } else if (m = s.match(/^ENCABEZADO\s+([1-6])\s*\|\s*"(.*)"$/)) {
+            bodyHtml += `<h${m[1]}>${m[2]}</h${m[1]}>\n`;
+        } else if (m = s.match(/^TEXTO_ID\s+(\w+)\s*\|\s*"(.*)"$/)) {
+            bodyHtml += `<p id="${m[1]}">${m[2]}</p>\n`;
+        } else if (m = s.match(/^TEXTO\s+"(.*)"$/)) {
+            bodyHtml += `<p>${m[1]}</p>\n`;
+        } else if (m = s.match(/^ENTRADA\s+(\w+)\s*\|\s*"(.*)"$/)) {
+            bodyHtml += `<input id="${m[1]}" value="${m[2]}" />\n`;
+        } else if (m = s.match(/^BOTON\s+(\w+)\s*\|\s*"(.*)"$/)) {
+            bodyHtml += `<button id="${m[1]}" type="button">${m[2]}</button>\n`;
+        } else if (m = s.match(/^IMAGEN\s+(\S+)$/)) {
+            bodyHtml += `<img src="${m[1]}" alt="Imagen" />\n`;
+        } else if (m = s.match(/^ENLACE\s+"?([^"\s|]+)"?\s*\|\s*"(.*)"$/)) {
+            bodyHtml += `<a href="${m[1]}">${m[2]}</a>\n`;
+        } else if (s === 'LINEA') {
+            bodyHtml += `<hr />\n`;
+        }
+    });
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+button { padding: 8px 14px; margin: 4px; cursor: pointer; background: #007acc; color: white; border: none; border-radius: 4px; }
+input { padding: 8px; margin: 4px; }
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+}
+
+function updatePreview() {
+    const code = document.getElementById('code').value;
+    const html = translateRcToHtml(code);
+    const iframe = document.getElementById('preview');
+    iframe.srcdoc = html;
+}
+
+document.getElementById('code').addEventListener('input', updatePreview);
+window.onload = updatePreview;
+
+function downloadFile(filename, text) {
+    const element = document.createElement('a');
+    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+    element.setAttribute('download', filename);
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+}
+
+function downloadRc() {
+    downloadFile('codigo.rc', document.getElementById('code').value);
+}
+
+function downloadHtml() {
+    const html = translateRcToHtml(document.getElementById('code').value);
+    downloadFile('pagina.html', html);
+}
+</script>
+</body>
+</html>

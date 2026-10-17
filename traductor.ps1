@@ -27,7 +27,7 @@ function Escape-Html([string]$s) {
     return [System.Net.WebUtility]::HtmlEncode($s)
 }
 
-function Translate-Rin([string]$File, [string]$Name) {
+function Translate-Rc([string]$File, [string]$Name) {
     $lines = [System.IO.File]::ReadAllLines($File)
     $body = [System.Text.StringBuilder]::new()
     $title = $Name
@@ -72,7 +72,7 @@ function Translate-Rin([string]$File, [string]$Name) {
             continue
         }
         default {
-            Write-Host "Aviso .rin: comando no reconocido: $_" -ForegroundColor Yellow
+            Write-Host "Aviso .rc: comando no reconocido: $_" -ForegroundColor Yellow
         }
     }
 
@@ -95,7 +95,7 @@ $($body.ToString().TrimEnd())
 
 function Translate-File([string]$File) {
     $ext = [IO.Path]::GetExtension($File).ToLowerInvariant()
-    if ($ext -ne ".rin") {
+    if ($ext -ne ".rc") {
         return
     }
 
@@ -103,7 +103,7 @@ function Translate-File([string]$File) {
     $output = Join-Path $Root ($name + ".html")
 
     try {
-        $content = Translate-Rin $File $name
+        $content = Translate-Rc $File $name
         [IO.File]::WriteAllText($output, [string]$content, [Text.UTF8Encoding]::new($false))
         Write-Host "Traducido: $([IO.Path]::GetFileName($File)) -> $([IO.Path]::GetFileName($output))" -ForegroundColor Green
     }
@@ -117,17 +117,17 @@ Write-Host "===================================" -ForegroundColor Cyan
 Write-Host "       CHX - TRADUCTOR ACTIVO      " -ForegroundColor Cyan
 Write-Host "===================================" -ForegroundColor Cyan
 Write-Host "Carpeta principal: $Root"
-Write-Host "Busca archivos .rin en las subcarpetas."
+Write-Host "Busca archivos .rc en las subcarpetas."
 Write-Host "Los resultados (.html) se guardan aquí, junto al traductor."
 if (-not $NoWatch) {
     Write-Host "Deja esta ventana abierta. Pulsa Ctrl+C para detener."
 }
 Write-Host ""
 
-# Traducir todos los archivos .rin existentes al iniciar.
+# Traducir todos los archivos .rc existentes al iniciar.
 Get-ChildItem -LiteralPath $Root -Recurse -File |
     Where-Object {
-        $_.Extension.ToLowerInvariant() -eq ".rin"
+        $_.Extension.ToLowerInvariant() -eq ".rc"
     } |
     ForEach-Object { Translate-File $_.FullName }
 
@@ -149,7 +149,7 @@ $action = {
     $path = $Event.SourceEventArgs.FullPath
 
     $ext = [IO.Path]::GetExtension($path).ToLowerInvariant()
-    if ($ext -eq ".rin") {
+    if ($ext -eq ".rc") {
         $now = [datetime]::Now
         $lastTime = [datetime]::MinValue
         if ($lastEvents.TryGetValue($path, [ref]$lastTime)) {
